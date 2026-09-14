@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>🧪 AutoTest</h1>
+    <span class="sub">Sinh test case bằng AI</span>
+  </header>
+
+  <main>
+    <label class="field-label">Tên màn hình hiện tại (tùy chọn)</label>
+    <input type="text" id="screenName" class="text-input"
+      placeholder="VD: Đăng nhập, Quản lý sản phẩm... (để gom đúng sheet)" />
+
+    <label class="field-label">Tài liệu đặc tả (tùy chọn)</label>
+    <div class="upload-row">
+      <label for="specFile" class="upload-btn">📎 Tải file (.docx/.pdf/.xlsx/.md/.txt)</label>
+      <input type="file" id="specFile" accept=".txt,.md,.csv,.docx,.pdf,.xlsx,.xlsm" hidden />
+      <span id="fileName" class="file-name"></span>
+    </div>
+    <textarea id="spec" rows="3"
+      placeholder="Dán yêu cầu / mô tả chức năng, hoặc tải file đặc tả lên..."></textarea>
+    <button id="genMdBtn" class="mini-btn wide" disabled
+      title="Quét trang trước. AI đọc DOM và tự viết tài liệu đặc tả .md cho màn hình, điền vào ô trên + tải file.">
+      📝 Tự sinh tài liệu .md từ trang (AI đọc web → đặc tả)</button>
+
+    <label class="checkbox">
+      <input type="checkbox" id="thorough" checked />
+      Vét cạn — sinh đầy đủ nhiều test case (API, responsive, bảo mật...) (~40 giây)
+    </label>
+
+    <div class="toggle-row">
+      <span class="toggle-label">⚡ Tự động chạy test sau khi sinh</span>
+      <label class="switch">
+        <input type="checkbox" id="runToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="mode-row">
+      <span class="mode-label">Kết quả:</span>
+      <label><input type="radio" name="mode" value="append" checked /> Nối vào bộ hiện tại</label>
+      <label><input type="radio" name="mode" value="new" /> Tạo bộ mới</label>
+    </div>
+
+    <div class="btn-row">
+      <button id="scanBtn" class="btn">1 · Quét trang</button>
+      <button id="genBtn" class="btn btn-primary" disabled>2 · Sinh test case</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <!-- Bộ test case đang tích lũy -->
+    <div id="setBar" class="set-bar hidden">
+      <span id="setInfo" class="set-info">Bộ hiện tại: 0 case</span>
+      <div class="set-actions">
+        <label for="importFile" class="mini-btn" title="Gộp file test case cũ (.xlsx)">📥 Nhập .xlsx</label>
+        <input type="file" id="importFile" accept=".xlsx" hidden />
+        <button id="clearBtn" class="mini-btn danger" title="Xóa toàn bộ bộ hiện tại">🗑 Xóa bộ</button>
+      </div>
+    </div>
+
+    <div id="result" class="result hidden">
+      <!-- Bảng điều khiển trực quan (KPI + donut + tiến độ theo màn hình) -->
+      <div id="dashboard" class="dashboard">
+        <div class="dash-head">
+          <span class="dash-title">📊 Bảng điều khiển</span>
+          <button id="dashToggle" class="link-btn" title="Ẩn/hiện">Ẩn</button>
+        </div>
+        <div id="dashBody">
+          <div class="kpi-grid">
+            <div class="kpi-card" style="--c:#2f5597"><div class="kpi-num" id="kTotal">0</div><div class="kpi-lab">Tổng case</div></div>
+            <div class="kpi-card" style="--c:#16a34a"><div class="kpi-num" id="kPass">0</div><div class="kpi-lab">Pass</div></div>
+            <div class="kpi-card" style="--c:#dc2626"><div class="kpi-num" id="kFail">0</div><div class="kpi-lab">Fail</div></div>
+            <div class="kpi-card" style="--c:#7c3aed"><div class="kpi-num" id="kDone">0%</div><div class="kpi-lab">Đã test</div></div>
+          </div>
+          <div class="dash-mid">
+            <div class="donut" id="donut"><span class="donut-pct" id="donutPct">0%</span><span class="donut-sub">Pass</span></div>
+            <div class="screens" id="screens"></div>
+          </div>
+          <div class="history" id="history"></div>
+        </div>
+      </div>
+
+      <div class="result-head">
+        <span id="count">0 test case</span>
+        <div class="result-actions">
+          <button id="runBtn" class="btn btn-run" title="Chạy test trên trang. Case ảnh hưởng dữ liệu (xóa/sửa/tạo) sẽ hỏi xác nhận trước.">▶ Chạy test</button>
+          <select id="codePlatform" class="mini-select" title="Chọn nền tảng sinh code tự động">
+            <option value="web">Web · Playwright</option>
+            <option value="android">Mobile · Appium</option>
+          </select>
+          <button id="codeBtn" class="btn btn-code" title="Sinh file code pytest chạy được từ bộ test case (Web→Playwright, Mobile→Appium)">⟨/⟩ Code</button>
+          <button id="reportBtn" class="btn btn-report" title="Xuất báo cáo HTML đẹp, chia sẻ được">📄 Báo cáo</button>
+          <button id="exportBtn" class="btn btn-success">⬇ Excel</button>
+        </div>
+      </div>
+      <div id="list" class="list"></div>
+    </div>
+  </main>
+
+  <footer>
+    <span>Backend: <code>127.0.0.1:8000</code></span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
