@@ -19,11 +19,13 @@ def _classify(value: str) -> str:
         return "fail"
     if v in ("blocked", "block", "pending"):
         return "blocked"
+    if v in ("stopped", "stop", "đã dừng", "dừng"):
+        return "stopped"
     return "untested"
 
 
 def _stats(cases: list[dict]) -> dict:
-    cnt = {"pass": 0, "fail": 0, "blocked": 0, "untested": 0}
+    cnt = {"pass": 0, "fail": 0, "blocked": 0, "stopped": 0, "untested": 0}
     for c in cases:
         cnt[_classify(c.get("status", ""))] += 1
     total = len(cases)
@@ -39,7 +41,8 @@ def _donut_svg(s: dict) -> str:
     """Vẽ donut tỷ lệ kết quả bằng SVG thuần (không cần thư viện)."""
     total = s["total"] or 1
     segs = [("#16a34a", s["pass"]), ("#dc2626", s["fail"]),
-            ("#d97706", s["blocked"]), ("#cbd5e1", s["untested"])]
+            ("#d97706", s["blocked"]), ("#64748b", s["stopped"]),
+            ("#cbd5e1", s["untested"])]
     r, cx, cy, w = 70, 90, 90, 26
     circ = 2 * 3.141592653589793 * r
     parts, offset = [], 0.0
@@ -71,7 +74,10 @@ def _esc(v) -> str:
 
 def _status_badge(status: str) -> str:
     k = _classify(status)
-    label = {"pass": "Pass", "fail": "Fail", "blocked": "Blocked", "untested": "Chưa test"}[k]
+    label = {
+        "pass": "Pass", "fail": "Fail", "blocked": "Blocked",
+        "stopped": "Đã dừng", "untested": "Chưa test",
+    }[k]
     return f'<span class="badge {k}">{label}</span>'
 
 
@@ -113,7 +119,21 @@ def build_html(test_cases: list[dict], url: str = "", title: str = "Báo cáo ki
             "actual": c.get("actual", ""),
             "status": _classify(c.get("status", "")),
         })
+    # Nhúng JSON vào <script> nhưng không để dữ liệu người dùng có thể đóng
+    # thẻ script sớm (ví dụ payload XSS: </script><script>...).
+    #
+    # Không được tách chuỗi bằng cách nối "<" + "/" ở đây: cách đó làm JSON
+    # trở thành JavaScript không hợp lệ và khiến toàn bộ phần bảng không render.
+    # Các escape Unicode vẫn được trình duyệt giải mã lại đúng khi gán vào DATA.
     data_json = json.dumps(rows, ensure_ascii=False)
+    data_json = (
+        data_json
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
     now = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     kpis = [
@@ -133,7 +153,8 @@ def build_html(test_cases: list[dict], url: str = "", title: str = "Báo cáo ki
         title=_esc(title), url=_esc(url), now=now,
         kpi_html=kpi_html, donut=_donut_svg(s),
         legend_pass=s["pass"], legend_fail=s["fail"],
-        legend_blocked=s["blocked"], legend_untested=s["untested"],
+        legend_blocked=s["blocked"], legend_stopped=s["stopped"],
+        legend_untested=s["untested"],
         screen_rows="".join(screen_rows) or '<div class="muted">Chưa có dữ liệu màn hình.</div>',
         data_json=data_json,
     )
@@ -215,6 +236,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <div><span><span class="dot" style="background:#16a34a"></span>Pass</span><b>{legend_pass}</b></div>
         <div><span><span class="dot" style="background:#dc2626"></span>Fail</span><b>{legend_fail}</b></div>
         <div><span><span class="dot" style="background:#d97706"></span>Blocked</span><b>{legend_blocked}</b></div>
+        <div><span><span class="dot" style="background:#64748b"></span>Đã dừng</span><b>{legend_stopped}</b></div>
         <div><span><span class="dot" style="background:#cbd5e1"></span>Chưa test</span><b>{legend_untested}</b></div>
       </div>
     </div>
@@ -254,7 +276,10 @@ _TEMPLATE = """<!DOCTYPE html>
   const fs = document.getElementById("filterStatus");
   const shown = document.getElementById("shown");
   const LABEL = {{ pass: "Pass", fail: "Fail", blocked: "Blocked", untested: "Chưa test" }};
-  function esc(s) {{ return String(s == null ? "" : s).replace(/[&<>]/g, c => ({{"&":"&amp;","<":"&lt;",">":"&gt;"}}[c])); }}
+  function esc(s) {{
+    if (s == null) return "";
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }}
   function render() {{
     const term = q.value.trim().toLowerCase();
     const st = fs.value;
@@ -264,12 +289,24 @@ _TEMPLATE = """<!DOCTYPE html>
       return [r.id, r.screen, r.function, r.steps, r.expected, r.actual]
         .join(" ").toLowerCase().includes(term);
     }});
-    tbody.innerHTML = rows.map(r => `<tr>
-      <td>${{r.stt}}</td><td>${{esc(r.id)}}</td><td>${{esc(r.screen)}}</td>
-      <td>${{esc(r.function)}}</td><td>${{esc(r.ui_function)}}</td>
-      <td class="pre">${{esc(r.steps)}}</td><td class="pre">${{esc(r.expected)}}</td>
-      <td class="pre">${{esc(r.actual)}}</td>
-      <td><span class="badge ${{r.status}}">${{LABEL[r.status]}}</span></td></tr>`).join("");
+    tbody.innerHTML = "";
+    for (const r of rows) {{
+      const tr = document.createElement('tr');
+      const cols = [r.stt, r.id, r.screen, r.function, r.ui_function, r.steps, r.expected, r.actual];
+      for (let i = 0; i < cols.length; i++) {{
+        const td = document.createElement('td');
+        if (i >= 5) td.classList.add('pre');
+        td.textContent = String(cols[i] || '');
+        tr.appendChild(td);
+      }}
+      const tdStatus = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + r.status;
+      badge.textContent = LABEL[r.status];
+      tdStatus.appendChild(badge);
+      tr.appendChild(tdStatus);
+      tbody.appendChild(tr);
+    }}
     shown.textContent = `Hiện ${{rows.length}}/${{DATA.length}} case`;
   }}
   q.addEventListener("input", render);

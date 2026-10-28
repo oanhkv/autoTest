@@ -24,6 +24,7 @@ Backend (bản web) PHẢI đang chạy: uvicorn main:app --port 8000
 """
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -35,7 +36,9 @@ def _post(backend: str, path: str, payload: dict, timeout: int = 600) -> dict:
     req = urllib.request.Request(
         backend.rstrip("/") + path,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        # Token khớp AUTOTEST_TOKEN của backend (nếu backend bật xác thực)
+        headers={"Content-Type": "application/json",
+                 **({"X-AutoTest-Token": os.environ["AUTOTEST_TOKEN"]} if os.environ.get("AUTOTEST_TOKEN") else {})},
         method="POST",
     )
     try:

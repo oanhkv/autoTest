@@ -12,18 +12,21 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import ai_generator
+import api_testing
 import code_generator
 import doc_extract
 import excel_export
 import html_report
+import security
 
 app = FastAPI(title="AutoTest API", version="0.1.0")
 
-# Cho phép extension (chrome-extension://...) gọi vào.
-# Để đơn giản trong giai đoạn dev, mở cho mọi origin.
+# Chỉ cho extension Chrome + localhost gọi vào (xem security.py).
+# Thứ tự: middleware thêm SAU chạy TRƯỚC -> CORS bọc ngoài guard để lỗi 401/403 vẫn có header CORS.
+app.middleware("http")(security.guard_middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=security.origin_regex(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -184,3 +187,95 @@ def export_html(req: ExportRequest):
         media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="bao_cao_test.html"'},
     )
+
+
+# ===================== API Testing Hub =====================
+class ApiRunRequest(BaseModel):
+    cases: list[dict]
+    variables: dict[str, object] = {}
+    timeout: float = 20.0
+    verify_ssl: bool = True
+    allow_mutations: bool = False
+
+
+class ApiManualRequest(BaseModel):
+    method: str = "GET"
+    url: str
+    headers: dict[str, str] = {}
+    params: dict[str, object] = {}
+    body: object = None
+    body_type: str = ""
+    expected_status: int | None = 200
+    response_contains: str = ""
+    assertions: list[dict] = []
+    name: str = ""
+
+
+class ApiCodeRequest(BaseModel):
+    cases: list[dict]
+    variables: dict[str, object] = {}
+    title: str = "AutoTest API"
+
+
+@app.post("/api/import")
+async def api_import(file: UploadFile = File(...), format: str = "auto"):
+    """Import Postman Collection or Swagger/OpenAPI JSON/YAML and normalize cases."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "File API rỗng.")
+    try:
+        return api_testing.parse_definition(file.filename or "api.json", data, format)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, f"Không đọc được file API: {exc}")
+
+
+@app.post("/api/manual")
+def api_manual(req: ApiManualRequest):
+    """Create one real API test case from a manual request."""
+    if not req.url.strip():
+        raise HTTPException(400, "URL API không được để trống.")
+    if not req.url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "URL API phải bắt đầu bằng http:// hoặc https://.")
+    try:
+        return {"case": api_testing.manual_case(req.model_dump())}
+    except Exception as exc:
+        raise HTTPException(400, f"Không tạo được API test case: {exc}")
+
+
+@app.post("/api/run")
+def api_run(req: ApiRunRequest):
+    """Run real HTTP requests. No mock mode is used by this endpoint."""
+    if not req.cases:
+        raise HTTPException(400, "Chưa có API test case.")
+    if req.timeout <= 0 or req.timeout > 300:
+        raise HTTPException(400, "Timeout phải nằm trong khoảng 0-300 giây.")
+    try:
+        results = api_testing.run_cases(
+            req.cases,
+            variables=req.variables,
+            timeout=req.timeout,
+            verify_ssl=req.verify_ssl,
+            allow_mutations=req.allow_mutations,
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Lỗi chạy API thật: {exc}")
+    counts = {"pass": 0, "fail": 0, "blocked": 0, "skipped": 0}
+    for result in results:
+        key = str(result.get("status", "")).lower()
+        if key in counts:
+            counts[key] += 1
+    return {"results": results, "count": len(results), **counts, "mock": False}
+
+
+@app.post("/api/code")
+def api_code(req: ApiCodeRequest):
+    """Generate a pytest file that sends real HTTP requests (not mocked)."""
+    if not req.cases:
+        raise HTTPException(400, "Chưa có API test case để sinh code.")
+    try:
+        code = api_testing.generate_api_code(req.cases, req.variables, req.title)
+    except Exception as exc:
+        raise HTTPException(500, f"Lỗi sinh code API: {exc}")
+    return {"code": code, "lines": code.count(chr(10)) + 1, "mock": False}

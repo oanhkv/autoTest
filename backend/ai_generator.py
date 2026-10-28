@@ -194,13 +194,15 @@ class Provider:
             "generationConfig": gen_config,
         }
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-               f"{self.model}:generateContent?key={self.api_key}")
+               f"{self.model}:generateContent")
         data = json.dumps(payload).encode("utf-8")
         last_detail = ""
         # Tự thử lại khi Gemini quá tải (503) hoặc giới hạn tốc độ (429) tạm thời
         for attempt in range(6):
+            # API key gửi qua header (không đặt trên URL để tránh lộ key trong log/proxy)
             req = urllib.request.Request(
-                url, data=data, headers={"Content-Type": "application/json"})
+                url, data=data,
+                headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key})
             try:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
@@ -211,6 +213,16 @@ class Provider:
                 return "".join(p.get("text", "") for p in parts)
             except urllib.error.HTTPError as exc:
                 last_detail = exc.read().decode("utf-8", errors="ignore")
+                # Quota ngày/free-tier không thể giải quyết bằng retry ngắn.
+                # Trả lỗi ngay để các luồng có fallback local không phải chờ
+                # 75 giây (5 + 10 + 15 + 20 + 25).
+                quota_text = last_detail.lower()
+                if exc.code == 429 and (
+                    "quota exceeded" in quota_text
+                    or "free_tier" in quota_text
+                    or "current quota" in quota_text
+                ):
+                    raise ValueError(f"Gemini hết quota: {last_detail[:600]}")
                 if exc.code in (429, 503) and attempt < 5:
                     time.sleep(5 * (attempt + 1))  # 5,10,15,20,25s — chờ qua cửa sổ giới hạn/phút
                     continue
@@ -436,8 +448,115 @@ PLAN_SYSTEM = (
 )
 
 
+def _first_quoted(text: str) -> str:
+    """Lấy cụm từ trong dấu nháy để dùng làm locator gần đúng."""
+    text = str(text or "")
+    for pattern in (r'"([^"\n]{1,80})"', r"'([^'\n]{1,80})'", r"“([^”\n]{1,80})”"):
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def _local_plan_automation(test_cases: list[dict]) -> list[dict]:
+    """Lập kế hoạch cơ bản tại máy, không gọi API và không tốn quota.
+
+    Planner local ưu tiên chạy các case UI/validation phổ biến. Những case cần
+    API, CSDL, responsive hoặc đa trình duyệt được giữ ở trạng thái thủ công.
+    """
+    plans = []
+    manual_words = (
+        " api", "mã trạng thái", "status code", "cơ sở dữ liệu", "database", " db",
+        "responsive", "mobile", "tablet", "đa trình duyệt", "cross-browser",
+        "hiệu năng", "performance", "thời gian phản hồi", "zoom ",
+    )
+    validation_words = (
+        "để trống", "rỗng", "bắt buộc", "không hợp lệ", "sai định dạng",
+        "quá dài", "tối đa", "tối thiểu", "min", "max", "ký tự đặc biệt",
+        "trim", "khoảng trắng",
+    )
+    confirm_words = (
+        "thêm mới", "tạo mới", "xóa", "sửa", "cập nhật", "lưu", "gửi form",
+        "đăng nhập thành công", "thanh toán", "xss", "sql injection",
+    )
+
+    for case in test_cases:
+        case_id = str(case.get("id", "")).strip()
+        function = str(case.get("function", "")).strip()
+        sub_function = str(case.get("sub_function", "")).strip()
+        steps = str(case.get("steps", "")).strip()
+        expected = str(case.get("expected", "")).strip()
+        ui_function = str(case.get("ui_function", "")).strip().lower()
+        text = f" {function} {sub_function} {steps} {expected}".lower()
+
+        base = {
+            "id": case_id,
+            "runnable": True,
+            "risk": "safe",
+            "type": "ui",
+            "find": "",
+            "assert": "present",
+            "inputs": [],
+            "submit": "",
+            "assert_text": "",
+            "reason": "",
+        }
+
+        if any(word in text for word in manual_words):
+            base.update(
+                runnable=False,
+                reason="Case cần môi trường/API/CSDL hoặc kích thước trình duyệt chuyên dụng.",
+            )
+            plans.append(base)
+            continue
+
+        quoted_expected = _first_quoted(expected)
+        quoted_steps = _first_quoted(steps)
+        find = quoted_expected or quoted_steps or sub_function or function
+        find = re.sub(
+            r"^(check event|kiểm tra|check|hiển thị|initial|transition)\s*[-:–—]?\s*",
+            "",
+            find,
+            flags=re.IGNORECASE,
+        ).strip()
+        base["find"] = find[:120]
+
+        if "mật khẩu" in text and ("dạng" in text or "che" in text or "●" in text):
+            base["assert"] = "is_password"
+        elif any(word in text for word in ("không hiển thị", "không tồn tại", "bị ẩn")):
+            base["assert"] = "absent"
+
+        if any(word in text for word in confirm_words):
+            base.update(
+                risk="confirm",
+                type="action",
+                submit=quoted_steps or sub_function or function,
+                assert_text=quoted_expected,
+            )
+        elif any(word in text for word in validation_words):
+            base.update(
+                type="validation",
+                submit=quoted_steps or sub_function or function,
+                assert_text=quoted_expected,
+            )
+        elif ui_function != "ui" and not base["find"]:
+            base.update(
+                runnable=False,
+                reason="Không xác định được phần tử cần thao tác từ nội dung test case.",
+            )
+
+        plans.append(base)
+    return plans
+
+
 def plan_automation(dom_summary: str, test_cases: list[dict]) -> list[dict]:
     """AI biến các test case AN TOÀN thành kế hoạch thao tác máy chạy được (Giai đoạn 2)."""
+    # Chạy test không nên tiêu thêm quota Gemini. Mặc định dùng planner local;
+    # đặt AUTOTEST_PLAN_MODE=ai nếu muốn AI lập kế hoạch chi tiết hơn.
+    mode = os.environ.get("AUTOTEST_PLAN_MODE", "local").strip().lower()
+    if mode != "ai":
+        return _local_plan_automation(test_cases)
+
     provider = Provider()
     lines = []
     for c in test_cases:
@@ -446,10 +565,15 @@ def plan_automation(dom_summary: str, test_cases: list[dict]) -> list[dict]:
     user = (f"=== CẤU TRÚC GIAO DIỆN (DOM) ===\n{dom_summary[:2500]}\n\n"
             f"=== DANH SÁCH TEST CASE ===\n" + "\n".join(lines) +
             "\n\nHãy lập kế hoạch chạy cho từng case theo đúng định dạng JSON.")
-    raw = provider.complete(PLAN_SYSTEM, user, max_tokens=8000)
+    try:
+        raw = provider.complete(PLAN_SYSTEM, user, max_tokens=8000)
+    except Exception:
+        # Quota/rate limit/mất mạng không được làm hỏng toàn bộ chức năng chạy.
+        return _local_plan_automation(test_cases)
     try:
         data = _extract_json(raw)
     except json.JSONDecodeError:
         data = {}
     plans = data.get("plans") if isinstance(data, dict) else (data if isinstance(data, list) else [])
-    return [p for p in (plans or []) if isinstance(p, dict)]
+    parsed = [p for p in (plans or []) if isinstance(p, dict)]
+    return parsed or _local_plan_automation(test_cases)

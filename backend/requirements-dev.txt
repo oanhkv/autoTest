@@ -1,0 +1,7 @@
+# Phụ thuộc cho phát triển & chạy test (pytest backend + file Playwright sinh ra).
+# Cài: pip install -r requirements-dev.txt  rồi  playwright install chromium
+-r requirements.txt
+pytest==9.1.1
+httpx2==2.13.1
+playwright==1.63.0
+pytest-playwright==0.9.0

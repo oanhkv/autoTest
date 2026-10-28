@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Bí mật
+.env
+*.env
+!.env.example
+
+# File sinh ra khi chạy tool
+backend/*.xlsx
+test-results/
+playwright-report/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

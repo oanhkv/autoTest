@@ -1,9 +1,11 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-anthropic==0.42.0
+# Phụ thuộc chạy backend — khớp với phiên bản đã kiểm thử trong .venv (Python 3.12+).
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+anthropic==1.8.0
 openpyxl==3.1.5
-python-dotenv==1.0.1
-pydantic==2.10.4
-python-multipart==0.0.20
-python-docx==1.1.2
-pypdf==5.1.0
+python-dotenv==1.2.3
+pydantic==2.13.5
+python-multipart==0.0.32
+python-docx==1.2.0
+pypdf==6.19.0
+PyYAML==6.0.3

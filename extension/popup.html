@@ -27,6 +27,56 @@
       title="Quét trang trước. AI đọc DOM và tự viết tài liệu đặc tả .md cho màn hình, điền vào ô trên + tải file.">
       📝 Tự sinh tài liệu .md từ trang (AI đọc web → đặc tả)</button>
 
+    <!-- API Testing Hub: cùng một luồng cho Postman, OpenAPI và nhập tay -->
+    <details class="api-panel" open>
+      <summary>🔌 API Testing Hub <span class="api-badge">request thật · không mock</span></summary>
+      <div class="api-help">
+        Chọn một nguồn API. Hệ thống sẽ chuẩn hóa thành test case, gửi request thật và kiểm tra status/body.
+        POST/PUT/PATCH/DELETE bị chặn mặc định để bảo vệ dữ liệu.
+      </div>
+      <div class="api-source-row">
+        <select id="apiSource" class="mini-select api-source">
+          <option value="file">📄 Postman / Swagger / OpenAPI</option>
+          <option value="manual">✍️ Nhập một request thủ công</option>
+        </select>
+        <label for="apiFile" class="mini-btn">📥 Chọn file API</label>
+        <input type="file" id="apiFile" accept=".json,.yaml,.yml" hidden />
+        <span id="apiFileName" class="file-name"></span>
+      </div>
+      <div id="apiManualForm" class="api-manual hidden">
+        <div class="api-grid">
+          <select id="apiMethod" class="mini-select">
+            <option>GET</option><option>POST</option><option>PUT</option>
+            <option>PATCH</option><option>DELETE</option>
+          </select>
+          <input id="apiUrl" class="text-input" placeholder="https://api.example.com/users" />
+        </div>
+        <input id="apiName" class="text-input" placeholder="Tên test (tùy chọn)" />
+        <textarea id="apiHeaders" rows="2" placeholder='Headers JSON (tùy chọn): {"Authorization":"Bearer ..."}'></textarea>
+        <textarea id="apiParams" rows="2" placeholder='Query params JSON (tùy chọn): {"page":1}'></textarea>
+        <textarea id="apiBody" rows="3" placeholder='Body JSON/text (tùy chọn): {"name":"tester"}'></textarea>
+        <div class="api-grid api-small">
+          <input id="apiExpectedStatus" class="text-input" type="number" value="200" placeholder="Status mong đợi" />
+          <input id="apiContains" class="text-input" placeholder="Body phải chứa (tùy chọn)" />
+        </div>
+        <button id="apiAddManualBtn" class="mini-btn wide">➕ Thêm request vào bộ API</button>
+      </div>
+      <div class="api-options">
+        <input id="apiVariables" class="text-input" placeholder='Biến môi trường JSON, VD: {"baseUrl":"https://staging.example.com"}' />
+        <label class="checkbox api-check"><input type="checkbox" id="apiAllowMutations" /> Cho phép request thay đổi dữ liệu</label>
+        <label class="api-check">Timeout <input id="apiTimeout" class="number-input" type="number" min="1" max="300" value="20" /> giây</label>
+        <label class="api-check"><input type="checkbox" id="apiVerifySsl" checked /> Xác thực SSL</label>
+      </div>
+      <div class="api-actions">
+        <button id="apiImportBtn" class="btn btn-primary">1 · Nhập & tạo test API</button>
+        <button id="apiRunBtn" class="btn btn-run" disabled>▶ Chạy API thật</button>
+        <button id="apiCodeBtn" class="btn btn-code" disabled>⟨/⟩ Sinh pytest</button>
+      </div>
+      <div id="apiStatus" class="api-status"></div>
+      <div id="apiSummary" class="api-summary hidden"></div>
+      <div id="apiList" class="api-list"></div>
+    </details>
+
     <label class="checkbox">
       <input type="checkbox" id="thorough" checked />
       Vét cạn — sinh đầy đủ nhiều test case (API, responsive, bảo mật...) (~40 giây)
@@ -59,6 +109,8 @@
       <div class="set-actions">
         <label for="importFile" class="mini-btn" title="Gộp file test case cũ (.xlsx)">📥 Nhập .xlsx</label>
         <input type="file" id="importFile" accept=".xlsx" hidden />
+        <button id="importRunBtn" class="mini-btn mini-btn-run"
+          title="Nhập Excel, sinh code nếu có thể và chạy ngay trên trang hiện tại">📥 Nhập, sinh code & chạy</button>
         <button id="clearBtn" class="mini-btn danger" title="Xóa toàn bộ bộ hiện tại">🗑 Xóa bộ</button>
       </div>
     </div>
@@ -89,8 +141,10 @@
         <span id="count">0 test case</span>
         <div class="result-actions">
           <button id="runBtn" class="btn btn-run" title="Chạy test trên trang. Case ảnh hưởng dữ liệu (xóa/sửa/tạo) sẽ hỏi xác nhận trước.">▶ Chạy test</button>
+          <button id="stopBtn" class="btn btn-stop hidden" title="Dừng việc thực thi test đang chạy">⏹ Dừng test</button>
           <select id="codePlatform" class="mini-select" title="Chọn nền tảng sinh code tự động">
-            <option value="web">Web · Playwright</option>
+            <option value="web-ts">Web · Playwright TS</option>
+            <option value="web">Web · Playwright Python</option>
             <option value="android">Mobile · Appium</option>
           </select>
           <button id="codeBtn" class="btn btn-code" title="Sinh file code pytest chạy được từ bộ test case (Web→Playwright, Mobile→Appium)">⟨/⟩ Code</button>
@@ -104,6 +158,8 @@
 
   <footer>
     <span>Backend: <code>127.0.0.1:8000</code></span>
+    <input id="apiToken" class="token-input" type="password" autocomplete="off"
+      placeholder="Token (nếu .env có AUTOTEST_TOKEN)" title="Giá trị AUTOTEST_TOKEN trong backend/.env — để trống nếu không dùng" />
   </footer>
 
   <script src="popup.js"></script>

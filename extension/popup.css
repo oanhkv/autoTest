@@ -99,6 +99,9 @@ textarea:focus { outline: 2px solid #2f5597; border-color: transparent; }
 .mini-btn:hover { background: #e0eaff; }
 .mini-btn.danger { color: #dc2626; border-color: #fca5a5; }
 .mini-btn.danger:hover { background: #fee2e2; }
+.mini-btn-run { color: #7c3aed; border-color: #c4b5fd; font-weight: 700; }
+.mini-btn-run:hover:not(:disabled) { background: #f5f3ff; }
+.mini-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .upload-row {
   display: flex;
@@ -148,6 +151,8 @@ textarea:focus { outline: 2px solid #2f5597; border-color: transparent; }
 .btn-success:hover { background: #15803d; }
 .btn-run { background: #7c3aed; color: #fff; border-color: #7c3aed; flex: 0 0 auto; }
 .btn-run:hover:not(:disabled) { background: #6d28d9; }
+.btn-stop { background: #dc2626; color: #fff; border-color: #dc2626; flex: 0 0 auto; }
+.btn-stop:hover:not(:disabled) { background: #b91c1c; }
 
 .result-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-report { background: #0891b2; color: #fff; border-color: #0891b2; flex: 0 0 auto; }
@@ -165,6 +170,133 @@ textarea:focus { outline: 2px solid #2f5597; border-color: transparent; }
 }
 .mini-btn.wide { display: block; width: 100%; text-align: center; margin: 6px 0 0; padding: 6px; }
 .mini-btn.wide:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ===== API Testing Hub ===== */
+.api-panel {
+  margin-top: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  background: #eff6ff;
+  padding: 9px 10px 10px;
+}
+.api-panel > summary {
+  cursor: pointer;
+  color: #1e3a8a;
+  font-weight: 800;
+  font-size: 12px;
+  list-style-position: inside;
+}
+.api-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 9px;
+  font-weight: 700;
+}
+.api-help {
+  margin: 7px 0;
+  color: #475569;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.api-source-row, .api-grid, .api-options, .api-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.api-source-row { margin-bottom: 7px; }
+.api-source { flex: 1 1 180px; }
+.api-manual { padding-top: 2px; }
+.api-manual .text-input, .api-manual textarea { margin: 4px 0; }
+.api-grid > .text-input { flex: 1; margin: 0; min-width: 0; }
+.api-grid > .mini-select { flex: 0 0 80px; }
+.api-small > .text-input { flex: 1 1 100px; }
+.api-options {
+  margin-top: 6px;
+  padding: 6px 7px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #fff;
+}
+.api-options .text-input {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.api-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #475569;
+  white-space: nowrap;
+}
+.number-input {
+  width: 46px;
+  padding: 3px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.api-actions { margin-top: 7px; }
+.api-actions .btn { min-width: 0; padding: 6px 7px; font-size: 10.5px; }
+.api-status { min-height: 16px; margin-top: 6px; font-size: 10.5px; color: #475569; }
+.api-status.ok { color: #15803d; }
+.api-status.error { color: #b91c1c; }
+.api-summary {
+  margin-top: 5px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-size: 10px;
+  font-weight: 700;
+}
+.api-list {
+  max-height: 170px;
+  overflow-y: auto;
+  margin-top: 5px;
+}
+.api-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px;
+  margin-top: 3px;
+  border: 1px solid #dbeafe;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 10px;
+}
+.api-method {
+  flex: 0 0 43px;
+  padding: 2px 3px;
+  border-radius: 3px;
+  text-align: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 9px;
+  background: #64748b;
+}
+.api-method.get { background: #16a34a; }
+.api-method.post { background: #2563eb; }
+.api-method.put, .api-method.patch { background: #d97706; }
+.api-method.delete { background: #dc2626; }
+.api-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+}
+.api-row-status { color: #64748b; white-space: nowrap; }
+.api-row-status.pass { color: #15803d; font-weight: 700; }
+.api-row-status.fail { color: #b91c1c; font-weight: 700; }
+.api-row-status.blocked { color: #b45309; font-weight: 700; }
 
 /* ===== Bảng điều khiển (dashboard) ===== */
 .dashboard {
@@ -329,3 +461,13 @@ footer {
   color: #94a3b8;
 }
 footer code { color: #2f5597; }
+
+/* Ô token backend ở footer (tùy chọn, khớp AUTOTEST_TOKEN trong .env) */
+.token-input {
+  margin-left: 8px;
+  width: 170px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+}

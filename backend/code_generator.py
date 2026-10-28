@@ -9,6 +9,7 @@ Hai mắt xích:
 
 Dùng lại lớp Provider trong ai_generator (chọn nguồn AI qua .env: ollama/gemini/anthropic).
 """
+import json
 import re
 
 from ai_generator import Provider
@@ -78,6 +79,18 @@ CODE_SYSTEM = (
     "CHỈ trả về CODE PYTHON (không giải thích, không markdown ngoài code)."
 )
 
+TS_CODE_SYSTEM = (
+    "Bạn là kỹ sư Automation Test. Hãy sinh MỘT FILE TYPESCRIPT hoàn chỉnh dùng **@playwright/test** "
+    "để kiểm thử tự động màn hình web được mô tả. YÊU CẦU:\n"
+    "- Dùng `import { test, expect } from '@playwright/test';`\n"
+    "- MỖI test case là MỘT hàm `test('...', async ({ page }) => { ... })`.\n"
+    "- Định vị phần tử bằng API BỀN VỮNG: `page.getByLabel`, `page.getByRole`, `page.getByPlaceholder`, `page.getByText`.\n"
+    "- Có `await page.goto(BASE_URL);` ở đầu mỗi test.\n"
+    "- Dùng `expect(locator).toBeVisible();`, `toHaveText()`...\n"
+    "- Với case reset dữ liệu/đổi dữ liệu thật: viết test nhưng thêm `test.skip()` với lý do rõ ràng.\n"
+    "- Chỉ trả về CODE TYPESCRIPT (không giải thích, không markdown ngoài code)."
+)
+
 
 def _cases_brief(test_cases: list[dict], limit: int = 24) -> str:
     lines = []
@@ -94,24 +107,146 @@ def _cases_brief(test_cases: list[dict], limit: int = 24) -> str:
     return "\n".join(lines)
 
 
+def _case_hint(case: dict) -> str:
+    """Chọn chuỗi locator tối thiểu cho code fallback khi AI hết quota."""
+    text = " ".join(
+        str(case.get(key, "") or "")
+        for key in ("sub_function", "function", "expected", "steps")
+    ).strip()
+    quoted = re.search(r'["“]([^"”\n]{2,80})["”]', text)
+    hint = quoted.group(1) if quoted else text
+    hint = re.sub(
+        r"^(check event|kiểm tra|hiển thị|kiểm|test|initial|transition)\s*[-:–—]?\s*",
+        "",
+        hint,
+        flags=re.IGNORECASE,
+    ).strip()
+    return (hint or str(case.get("id", "test case"))).replace("\n", " ")[:120]
+
+
+def _fallback_playwright_code(url: str, test_cases: list[dict]) -> str:
+    """Sinh code Playwright tối thiểu không cần AI, dùng khi API hết quota."""
+    lines = [
+        '"""Code fallback tự sinh khi AI không khả dụng.',
+        "",
+        "Cài đặt: pip install pytest pytest-playwright && playwright install",
+        "Chạy: pytest test_autotest.py -v",
+        '"""',
+        "import json",
+        "import re",
+        "",
+        "import pytest",
+        "from playwright.sync_api import expect",
+        "",
+        f"BASE_URL = {json.dumps(url or 'http://localhost', ensure_ascii=False)}",
+        "",
+    ]
+    manual_words = (
+        " api", "mã trạng thái", "database", "cơ sở dữ liệu", "responsive",
+        "mobile", "tablet", "đa trình duyệt", "hiệu năng", "performance",
+    )
+    for i, case in enumerate(test_cases, start=1):
+        case_id = str(case.get("id", f"TC_{i:03d}"))
+        name = re.sub(r"\W+", "_", case_id, flags=re.UNICODE).strip("_") or f"tc_{i:03d}"
+        title = f"{case_id} - {case.get('function', 'Kiểm tra giao diện')}"
+        hint = _case_hint(case)
+        text = f" {case.get('function', '')} {case.get('steps', '')} {case.get('expected', '')}".lower()
+        lines.extend([
+            f"def test_{name}(page):",
+            f"    \"\"\"{title.replace(chr(34), '')}.\"\"\"",
+            "    page.goto(BASE_URL)",
+        ])
+        if any(word in text for word in manual_words):
+            lines.append("    pytest.skip('Case cần kiểm tra ngoài phạm vi UI browser tự động.')")
+        else:
+            lines.extend([
+                f"    locator = page.get_by_text({json.dumps(hint, ensure_ascii=False)}, exact=False).first",
+                "    expect(locator).to_be_visible()",
+            ])
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _fallback_playwright_ts_code(url: str, test_cases: list[dict]) -> str:
+    """Sinh code Playwright Test tối thiểu không cần AI, dùng khi API hết quota."""
+    lines = [
+        "// Code fallback tự sinh khi AI không khả dụng.",
+        "// Cài đặt: npm install -D @playwright/test && npx playwright install",
+        "// Chạy: npx playwright test",
+        "import { test, expect } from '@playwright/test';",
+        "",
+        f"const BASE_URL = {json.dumps(url or 'http://localhost', ensure_ascii=False)};",
+        "",
+    ]
+    manual_words = (
+        " api", "mã trạng thái", "database", "cơ sở dữ liệu", "responsive",
+        "mobile", "tablet", "đa trình duyệt", "hiệu năng", "performance",
+    )
+    for i, case in enumerate(test_cases, start=1):
+        case_id = str(case.get("id", f"TC_{i:03d}"))
+        title = f"{case_id} - {case.get('function', 'Kiểm tra giao diện')}".replace("'", "\\'")
+        hint = _case_hint(case)
+        text = f" {case.get('function', '')} {case.get('steps', '')} {case.get('expected', '')}".lower()
+        lines.extend([
+            f"test({json.dumps(title, ensure_ascii=False)}, async ({{ page }}) => {{",
+            "  await page.goto(BASE_URL);",
+        ])
+        if any(word in text for word in manual_words):
+            lines.append("  test.skip(true, 'Case cần kiểm tra ngoài phạm vi UI browser tự động.');")
+        else:
+            lines.extend([
+                f"  const locator = page.getByText({json.dumps(hint, ensure_ascii=False)}, {{ exact: false }}).first();",
+                "  await expect(locator).toBeVisible();",
+            ])
+        lines.extend(["});", ""])
+    return "\n".join(lines)
+
+
 def generate_playwright_code(url: str, dom_summary: str, spec: str,
                              test_cases: list[dict]) -> str:
     """Sinh file pytest+Playwright từ DOM + spec + danh sách test case (nền tảng WEB)."""
     if not test_cases:
         raise ValueError("Chưa có test case để sinh code.")
-    provider = Provider()
-    ctx = (_context(url, dom_summary, spec, max_dom=1500 if provider.compact else 3500)
-           + "\n\n=== DANH SÁCH TEST CASE CẦN TỰ ĐỘNG HÓA ===\n"
-           + _cases_brief(test_cases))
-    raw = provider.complete(CODE_SYSTEM, ctx, max_tokens=3500 if provider.compact else 9000,
-                            json_mode=False)
-    code = _extract_block(raw)
-    if "def test" not in code:
-        raise ValueError("AI chưa sinh được code hợp lệ (không thấy hàm test). Thử lại hoặc đổi model mạnh hơn.")
-    # Bảo đảm có dòng import tối thiểu nếu model quên
-    if "import" not in code.split("\n", 1)[0] and "import pytest" not in code:
-        code = ("import pytest\nfrom playwright.sync_api import expect\n\n" + code)
-    return code
+    try:
+        provider = Provider()
+        ctx = (_context(url, dom_summary, spec, max_dom=1500 if provider.compact else 3500)
+               + "\n\n=== DANH SÁCH TEST CASE CẦN TỰ ĐỘNG HÓA ===\n"
+               + _cases_brief(test_cases))
+        raw = provider.complete(CODE_SYSTEM, ctx, max_tokens=3500 if provider.compact else 9000,
+                                json_mode=False)
+        code = _extract_block(raw)
+        if "def test" not in code:
+            raise ValueError("AI chưa sinh được code hợp lệ.")
+        # Bảo đảm có dòng import tối thiểu nếu model quên
+        if "import" not in code.split("\n", 1)[0] and "import pytest" not in code:
+            code = ("import pytest\nfrom playwright.sync_api import expect\n\n" + code)
+        return code
+    except Exception:
+        return _fallback_playwright_code(url, test_cases)
+
+
+def generate_playwright_ts_code(url: str, dom_summary: str, spec: str,
+                               test_cases: list[dict]) -> str:
+    """Sinh file TypeScript + Playwright Test từ DOM + spec + test case (nền tảng WEB)."""
+    if not test_cases:
+        raise ValueError("Chưa có test case để sinh code.")
+    try:
+        provider = Provider()
+        ctx = (_context(url, dom_summary, spec, max_dom=1500 if provider.compact else 3500)
+               + "\n\n=== DANH SÁCH TEST CASE CẦN TỰ ĐỘNG HÓA ===\n"
+               + _cases_brief(test_cases))
+        raw = provider.complete(TS_CODE_SYSTEM, ctx, max_tokens=3500 if provider.compact else 9000,
+                                json_mode=False)
+        code = _extract_block(raw)
+        if "test(" not in code and "test.describe" not in code:
+            raise ValueError("AI chưa sinh được TypeScript Playwright hợp lệ.")
+        if "@playwright/test" not in code and "from '@playwright/test'" not in code:
+            code = "import { test, expect } from '@playwright/test';\n\n" + code
+        if "const BASE_URL" not in code and "await page.goto" in code:
+            code = "const BASE_URL = '" + (url or "http://localhost") + "';\n\n" + code
+        return code
+    except Exception:
+        return _fallback_playwright_ts_code(url, test_cases)
 
 
 # ===================== 3) Mobile native: spec/UI XML + cases -> code Appium =====================
@@ -174,4 +309,6 @@ def generate_code(platform: str, url: str = "", ui_summary: str = "", spec: str 
     p = (platform or "web").strip().lower()
     if p in ("android", "mobile", "ios", "appium"):
         return generate_appium_code(app_info, ui_summary, spec, test_cases)
+    if p in ("web-ts", "playwright-ts", "typescript", "ts"):
+        return generate_playwright_ts_code(url, ui_summary, spec, test_cases)
     return generate_playwright_code(url, ui_summary, spec, test_cases)
